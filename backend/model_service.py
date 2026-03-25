@@ -16,8 +16,11 @@ from config import (
     DEVICE,
     MODEL_CLASS_PATH,
     MODEL_PATH,
+    MODEL_URL,
     MODEL_STRICT,
 )
+
+from download_model import ensure_model_download
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -108,6 +111,16 @@ class ModelService:
                 logger.info("Using CPU")
 
             model_path = Path(MODEL_PATH)
+            try:
+                model_path = ensure_model_download(model_path, MODEL_URL)
+            except Exception as exc:
+                msg = f"Failed to ensure model weights: {exc}"
+                if ALLOW_PLACEHOLDER_MODEL:
+                    logger.warning("%s. Using placeholder model.", msg)
+                    self._model = self._create_placeholder_model()
+                    self._model.to(self._device).eval()
+                    return
+                raise RuntimeError(msg) from exc
             if not model_path.exists():
                 msg = f"Model file not found at {MODEL_PATH}"
                 if ALLOW_PLACEHOLDER_MODEL:

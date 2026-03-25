@@ -21,7 +21,14 @@ pip install -r requirements.txt
 
 - Copy `.env.example` to `.env`
 - Set `MODEL_PATH` to your weights file
+- Set `MODEL_URL` to a public Google Drive link or file ID for first-time downloads
 - Set `MODEL_CLASS_PATH` to `model.generator:MitsGanGenerator` or your class
+
+## Model Weights Download
+
+On startup, the backend will download the model to `model/weights/model.pth` if it is missing and `MODEL_URL` is set.
+For Render or other ephemeral filesystems, use a persistent disk or expect the model to re-download on each deploy.
+Set `ALLOW_PLACEHOLDER_MODEL=1` for dev-only fallback when downloads fail.
 
 ## Run
 

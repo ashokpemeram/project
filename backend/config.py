@@ -22,6 +22,7 @@ MODEL_PATH = _resolve_path(
     os.getenv("MODEL_PATH", BASE_DIR / "model" / "weights" / "model.pth"),
     BASE_DIR,
 )
+MODEL_URL = os.getenv("MODEL_URL")
 MODEL_CLASS_PATH = os.getenv("MODEL_CLASS_PATH", "model.generator:MitsGanGenerator")
 MODEL_STRICT = os.getenv("MODEL_STRICT", "1").lower() in {"1", "true", "yes"}
 ALLOW_PLACEHOLDER_MODEL = os.getenv("ALLOW_PLACEHOLDER_MODEL", "0").lower() in {"1", "true", "yes"}
