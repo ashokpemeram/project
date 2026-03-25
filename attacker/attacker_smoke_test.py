@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import torch
 
-from attack_metrics import compute_mse, compute_psnr
-from attacker import Attacker, BlurAttack, CutoutAttack, GaussianNoiseAttack, PatchAttack
-from attacker_integration import build_training_attacker, compute_attack_loss
+from .attack_metrics import compute_mse, compute_psnr
+from .attacker import Attacker, BlurAttack, CutoutAttack, GaussianNoiseAttack, PatchAttack
+from .attacker_integration import build_training_attacker, compute_attack_loss
 
 
 def _assert_in_range(x: torch.Tensor) -> None:

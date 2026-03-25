@@ -6,8 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from attack_metrics import summarize_metrics, to_unit_interval
-from attacker import Attacker, build_default_training_attacker
+from .attack_metrics import summarize_metrics, to_unit_interval
+from .attacker import Attacker, build_default_training_attacker
 
 
 Tensor = torch.Tensor

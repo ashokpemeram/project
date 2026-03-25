@@ -1,0 +1,57 @@
+.analysis-page {
+  gap: 24px;
+}
+
+.analysis-controls {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+  margin-top: 16px;
+}
+
+.analysis-controls label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.analysis-controls select,
+.analysis-controls input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(16, 32, 34, 0.2);
+  font-size: 0.95rem;
+}
+
+.preview-image {
+  margin-top: 16px;
+  width: 100%;
+  max-width: 320px;
+  border-radius: 14px;
+  border: 1px solid rgba(16, 32, 34, 0.1);
+}
+
+.analysis-results {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.analysis-results img {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(16, 32, 34, 0.1);
+  margin-top: 12px;
+}
+
+.metric-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.metric-list span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}

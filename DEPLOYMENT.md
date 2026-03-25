@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p models uploads
+RUN mkdir -p model/weights storage/protected uploads
 
 # Expose port
 EXPOSE 8000
@@ -66,7 +66,7 @@ uploads/*
 ```bash
 cd backend
 docker build -t medical-image-backend .
-docker run -p 8000:8000 -v $(pwd)/models:/app/models medical-image-backend
+docker run -p 8000:8000 -v $(pwd)/model/weights:/app/model/weights medical-image-backend
 ```
 
 ### Frontend Docker Setup
@@ -139,11 +139,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/models:/app/models
+      - ./model/weights:/app/model/weights
       - ./backend/uploads:/app/uploads
     environment:
       - DEVICE=cpu
-      - MODEL_PATH=/app/models/model.pth
+      - MODEL_PATH=/app/model/weights/model.pth
     restart: unless-stopped
 
   frontend:

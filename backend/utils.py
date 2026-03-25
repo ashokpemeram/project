@@ -2,144 +2,131 @@ import io
 import torch
 from PIL import Image
 import torchvision.transforms as transforms
-from config import IMAGE_SIZE, NORMALIZE_MEAN, NORMALIZE_STD, MAX_FILE_SIZE, allowed_file
+
+from config import (
+    IMAGE_SIZE,
+    NORMALIZE_MEAN,
+    NORMALIZE_STD,
+    MAX_FILE_SIZE,
+    MODEL_INPUT_CHANNELS,
+    MODEL_INPUT_RANGE,
+    allowed_file,
+)
 
 
 def validate_image(file_content: bytes, filename: str) -> tuple[bool, str]:
-    """
-    Validate uploaded image file
-    
-    Args:
-        file_content: Raw file bytes
-        filename: Original filename
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    # Check file extension
     if not allowed_file(filename):
         return False, "Invalid file type. Allowed types: jpg, jpeg, png, bmp, tiff"
-    
-    # Check file size
+
     if len(file_content) > MAX_FILE_SIZE:
         return False, f"File too large. Maximum size: {MAX_FILE_SIZE / (1024*1024):.1f}MB"
-    
-    # Try to open as image
+
     try:
         img = Image.open(io.BytesIO(file_content))
-        img.verify()  # Verify it's actually an image
+        img.verify()
         return True, ""
-    except Exception as e:
-        return False, f"Invalid image file: {str(e)}"
+    except Exception as exc:
+        return False, f"Invalid image file: {str(exc)}"
 
 
-def preprocess_image(image_bytes: bytes, device: str = 'cpu') -> torch.Tensor:
-    """
-    Preprocess image for model inference
-    
-    Args:
-        image_bytes: Raw image bytes
-        device: Device to load tensor on ('cpu' or 'cuda')
-        
-    Returns:
-        Preprocessed image tensor
-    """
-    # Load image
+def preprocess_image(image_bytes: bytes, device: str = "cpu") -> torch.Tensor:
     img = Image.open(io.BytesIO(image_bytes))
-    
-    # Convert to RGB if necessary
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
-    
-    # Define transforms
-    transform = transforms.Compose([
-        transforms.Resize(IMAGE_SIZE),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=NORMALIZE_MEAN, std=NORMALIZE_STD)
-    ])
-    
-    # Apply transforms
+
+    if MODEL_INPUT_CHANNELS == 1:
+        img = img.convert("L")
+    else:
+        img = img.convert("RGB")
+
+    transform = transforms.Compose(
+        [
+            transforms.Resize(IMAGE_SIZE),
+            transforms.ToTensor(),
+        ]
+    )
+
     img_tensor = transform(img)
-    
-    # Add batch dimension
+
+    if MODEL_INPUT_RANGE == "tanh":
+        img_tensor = img_tensor * 2.0 - 1.0
+    elif MODEL_INPUT_RANGE == "imagenet":
+        if img_tensor.size(0) == 3:
+            img_tensor = transforms.Normalize(mean=NORMALIZE_MEAN, std=NORMALIZE_STD)(img_tensor)
+    elif MODEL_INPUT_RANGE != "unit":
+        raise ValueError(f"Unsupported MODEL_INPUT_RANGE: {MODEL_INPUT_RANGE}")
+
     img_tensor = img_tensor.unsqueeze(0)
-    
-    # Move to device
     img_tensor = img_tensor.to(device)
-    
+
     return img_tensor
 
 
+def load_image_unit_tensor(
+    image_bytes: bytes,
+    device: str = "cpu",
+    size: tuple[int, int] | None = IMAGE_SIZE,
+) -> torch.Tensor:
+    img = Image.open(io.BytesIO(image_bytes))
+    if MODEL_INPUT_CHANNELS == 1:
+        img = img.convert("L")
+    else:
+        img = img.convert("RGB")
+    if size is not None:
+        img = img.resize(size)
+
+    transform = transforms.ToTensor()
+    img_tensor = transform(img)
+    img_tensor = img_tensor.unsqueeze(0)
+    img_tensor = img_tensor.to(device)
+    return img_tensor
+
+
+def _denormalize_tensor(tensor: torch.Tensor) -> torch.Tensor:
+    if tensor.size(0) == 1:
+        return (tensor + 1.0) / 2.0
+    if tensor.size(0) == 3:
+        for t, m, s in zip(tensor, NORMALIZE_MEAN, NORMALIZE_STD):
+            t.mul_(s).add_(m)
+        return tensor
+    raise ValueError("Unsupported channel count for denormalization.")
+
+
 def postprocess_output(output_tensor: torch.Tensor) -> bytes:
-    """
-    Convert model output tensor to image bytes
-    
-    Args:
-        output_tensor: Model output tensor
-        
-    Returns:
-        Image bytes in PNG format
-    """
-    # Remove batch dimension
     if output_tensor.dim() == 4:
         output_tensor = output_tensor.squeeze(0)
-    
-    # Move to CPU and convert to numpy
+
     output_tensor = output_tensor.cpu().detach()
-    
-    # Denormalize if needed
-    # Assuming output is in range [0, 1] or needs denormalization
+
     if output_tensor.min() < 0:
-        # Denormalize using same stats as input
-        for t, m, s in zip(output_tensor, NORMALIZE_MEAN, NORMALIZE_STD):
-            t.mul_(s).add_(m)
-    
-    # Clamp values to [0, 1]
+        output_tensor = _denormalize_tensor(output_tensor)
+
     output_tensor = torch.clamp(output_tensor, 0, 1)
-    
-    # Convert to PIL Image
+
     transform = transforms.ToPILImage()
     img = transform(output_tensor)
-    
-    # Convert to bytes
+
     img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG')
+    img.save(img_byte_arr, format="PNG")
     img_byte_arr.seek(0)
-    
+
     return img_byte_arr.getvalue()
 
 
 def tensor_to_image(tensor: torch.Tensor) -> Image.Image:
-    """
-    Convert tensor to PIL Image
-    
-    Args:
-        tensor: Image tensor
-        
-    Returns:
-        PIL Image
-    """
     if tensor.dim() == 4:
         tensor = tensor.squeeze(0)
-    
+
     tensor = tensor.cpu().detach()
-    
-    # Denormalize if needed
+
     if tensor.min() < 0:
-        for t, m, s in zip(tensor, NORMALIZE_MEAN, NORMALIZE_STD):
-            t.mul_(s).add_(m)
-    
+        tensor = _denormalize_tensor(tensor)
+
     tensor = torch.clamp(tensor, 0, 1)
-    
+
     transform = transforms.ToPILImage()
     return transform(tensor)
 
 
 def output_to_unit_interval(output_tensor: torch.Tensor) -> torch.Tensor:
-    """
-    Normalize a model output tensor to the [0, 1] range.
-    Handles ImageNet-normalized RGB outputs by denormalizing first.
-    """
     if output_tensor.dim() == 3:
         output_tensor = output_tensor.unsqueeze(0)
     if output_tensor.dim() != 4:
@@ -160,9 +147,6 @@ def output_to_unit_interval(output_tensor: torch.Tensor) -> torch.Tensor:
 
 
 def rgb_to_grayscale_minus1_1(rgb_tensor: torch.Tensor) -> torch.Tensor:
-    """
-    Convert an RGB tensor in [0, 1] to grayscale in [-1, 1].
-    """
     if rgb_tensor.dim() == 3:
         rgb_tensor = rgb_tensor.unsqueeze(0)
     if rgb_tensor.dim() != 4:
@@ -183,9 +167,6 @@ def rgb_to_grayscale_minus1_1(rgb_tensor: torch.Tensor) -> torch.Tensor:
 
 
 def grayscale_minus1_1_to_png_bytes(tensor: torch.Tensor) -> bytes:
-    """
-    Convert a grayscale tensor in [-1, 1] to PNG bytes.
-    """
     if tensor.dim() == 4:
         tensor = tensor.squeeze(0)
     if tensor.dim() == 2:
@@ -198,15 +179,12 @@ def grayscale_minus1_1_to_png_bytes(tensor: torch.Tensor) -> bytes:
     img = transforms.ToPILImage()(tensor)
 
     img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG')
+    img.save(img_byte_arr, format="PNG")
     img_byte_arr.seek(0)
     return img_byte_arr.getvalue()
 
 
 def grayscale_unit_interval_to_png_bytes(tensor: torch.Tensor) -> bytes:
-    """
-    Convert a grayscale tensor in [0, 1] to PNG bytes.
-    """
     if tensor.dim() == 4:
         tensor = tensor.squeeze(0)
     if tensor.dim() == 2:
@@ -218,6 +196,6 @@ def grayscale_unit_interval_to_png_bytes(tensor: torch.Tensor) -> bytes:
     img = transforms.ToPILImage()(tensor)
 
     img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG')
+    img.save(img_byte_arr, format="PNG")
     img_byte_arr.seek(0)
     return img_byte_arr.getvalue()

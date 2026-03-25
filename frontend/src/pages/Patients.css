@@ -1,0 +1,60 @@
+.patients-page {
+  gap: 24px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.patients-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.patient-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.patient-card-body {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+
+.patient-card-body img {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(16, 32, 34, 0.1);
+}
+
+.patient-card-body .notes {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.patient-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.patient-actions a {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .patient-card-body {
+    grid-template-columns: 1fr;
+  }
+}
