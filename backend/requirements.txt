@@ -2,7 +2,7 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 torch
-torchvision==0.16.2
+torchvision
 Pillow==10.2.0
 python-dotenv==1.0.0
 aiofiles==23.2.1
