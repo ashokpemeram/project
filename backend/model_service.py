@@ -7,6 +7,10 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
+torch.set_grad_enabled(False)
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 BACKEND_DIR = Path(__file__).resolve().parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.append(str(BACKEND_DIR))
@@ -39,6 +43,10 @@ class ModelService:
         return cls._instance
 
     def __init__(self):
+        if self._model is None:
+            logger.info("ModelService initialized; model will load on first request.")
+
+    def ensure_loaded(self) -> None:
         if self._model is None:
             self.load_model()
 
@@ -103,12 +111,11 @@ class ModelService:
 
     def load_model(self) -> None:
         try:
-            if DEVICE == "cuda" and torch.cuda.is_available():
-                self._device = "cuda"
-                logger.info("Using GPU: %s", torch.cuda.get_device_name(0))
-            else:
-                self._device = "cpu"
-                logger.info("Using CPU")
+            requested_device = (DEVICE or "cpu").lower()
+            if requested_device != "cpu":
+                logger.warning("Forcing CPU for low-memory deployment (requested=%s)", DEVICE)
+            self._device = "cpu"
+            logger.info("Using CPU")
 
             model_path = Path(MODEL_PATH)
             try:
@@ -134,7 +141,7 @@ class ModelService:
             model = model_cls()
 
             logger.info("Loading model weights from %s", MODEL_PATH)
-            checkpoint = torch.load(MODEL_PATH, map_location=self._device)
+            checkpoint = torch.load(model_path, map_location="cpu")
             model, summary = self._load_state_dict(model, checkpoint)
 
             self._model = model.to(self._device).eval()
@@ -148,12 +155,12 @@ class ModelService:
                 return
             raise
 
-    @torch.no_grad()
     def predict(self, input_tensor: torch.Tensor) -> torch.Tensor:
         if self._model is None:
-            raise RuntimeError("Model not loaded")
+            self.load_model()
         input_tensor = input_tensor.to(self._device)
-        return self._model(input_tensor)
+        with torch.inference_mode():
+            return self._model(input_tensor)
 
     def get_device(self) -> str:
         return self._device

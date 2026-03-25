@@ -36,7 +36,7 @@ Set `ALLOW_PLACEHOLDER_MODEL=1` for dev-only fallback when downloads fail.
 python app.py
 ```
 
-The API runs on `http://localhost:5000`.
+The API runs on `http://localhost:10000` by default (or the value of `PORT`).
 
 ## Key Endpoints
 

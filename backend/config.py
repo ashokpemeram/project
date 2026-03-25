@@ -44,7 +44,8 @@ MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "bmp", "tiff"}
 
 # Image processing configuration
-IMAGE_SIZE = (512, 512)
+IMAGE_SIZE_VALUE = int(os.getenv("IMAGE_SIZE", "256"))
+IMAGE_SIZE = (IMAGE_SIZE_VALUE, IMAGE_SIZE_VALUE)
 NORMALIZE_MEAN = [0.485, 0.456, 0.406]
 NORMALIZE_STD = [0.229, 0.224, 0.225]
 

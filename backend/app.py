@@ -1,5 +1,6 @@
 import base64
 import logging
+import os
 import sys
 import uuid
 from contextlib import asynccontextmanager
@@ -60,6 +61,12 @@ def _build_attacker(attack_type: str, device: str) -> torch.nn.Module:
 
 def _now_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
+
+
+def _memory_error_detail(exc: Exception) -> str | None:
+    if isinstance(exc, RuntimeError) and "out of memory" in str(exc).lower():
+        return "Server ran out of memory. Try a smaller image size."
+    return None
 
 
 def _sanitize_user(user: dict) -> dict:
@@ -223,6 +230,9 @@ async def upload_patient_scan(
     except HTTPException:
         raise
     except Exception as exc:
+        detail = _memory_error_detail(exc)
+        if detail:
+            raise HTTPException(status_code=503, detail=detail)
         logger.error("Upload error: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Upload failed: {exc}")
 
@@ -253,64 +263,70 @@ async def run_attack(payload: AttackRequest, user: dict = Depends(get_current_us
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Protected image not found")
 
-    protected_bytes = file_path.read_bytes()
-    protected_unit = load_image_unit_tensor(protected_bytes, model_service.get_device())
-    protected_gray = rgb_to_grayscale_minus1_1(protected_unit)
-
     try:
+        protected_bytes = file_path.read_bytes()
+        protected_unit = load_image_unit_tensor(protected_bytes, model_service.get_device())
+        protected_gray = rgb_to_grayscale_minus1_1(protected_unit)
+
         attacker = _build_attacker(payload.attack_type, model_service.get_device())
+        with torch.no_grad():
+            attacked_gray = attacker(protected_gray)
+
+        tamper_map = (attacked_gray - protected_gray).abs()
+        tamper_map_norm = tamper_map / tamper_map.amax(dim=(2, 3), keepdim=True).clamp_min(1e-8)
+        threshold = max(0.0, min(1.0, float(payload.tamper_threshold)))
+        tamper_mask = (tamper_map_norm > threshold).to(tamper_map_norm.dtype)
+
+        metrics = {
+            "mse_attacked_vs_protected": compute_mse(attacked_gray, protected_gray).item(),
+            "psnr_attacked_vs_protected": compute_psnr(attacked_gray, protected_gray).item(),
+            "ssim_attacked_vs_protected": compute_ssim(attacked_gray, protected_gray).item(),
+        }
+
+        attacked_bytes = grayscale_minus1_1_to_png_bytes(attacked_gray)
+        tamper_map_bytes = grayscale_unit_interval_to_png_bytes(tamper_map_norm)
+        tamper_mask_bytes = grayscale_unit_interval_to_png_bytes(tamper_mask)
+
+        attacked_b64 = base64.b64encode(attacked_bytes).decode("utf-8")
+        tamper_map_b64 = base64.b64encode(tamper_map_bytes).decode("utf-8")
+        tamper_mask_b64 = base64.b64encode(tamper_mask_bytes).decode("utf-8")
+
+        attack_record = {
+            "id": uuid.uuid4().hex,
+            "patient_id": patient["id"],
+            "attack_type": payload.attack_type,
+            "tamper_threshold": threshold,
+            "metrics": metrics,
+            "created_at": _now_iso(),
+        }
+        store.add_attack(attack_record)
+        store.update_patient(
+            patient["id"],
+            {
+                "status": "Attacked",
+                "last_attack_at": attack_record["created_at"],
+                "last_attack_type": payload.attack_type,
+            },
+        )
+
+        return {
+            "success": True,
+            "attack_type": payload.attack_type,
+            "protected_image_url": patient["protected_url"],
+            "attacked_image": f"data:image/png;base64,{attacked_b64}",
+            "tamper_map": f"data:image/png;base64,{tamper_map_b64}",
+            "tamper_mask": f"data:image/png;base64,{tamper_mask_b64}",
+            "tamper_threshold": threshold,
+            "metrics": metrics,
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    with torch.no_grad():
-        attacked_gray = attacker(protected_gray)
-
-    tamper_map = (attacked_gray - protected_gray).abs()
-    tamper_map_norm = tamper_map / tamper_map.amax(dim=(2, 3), keepdim=True).clamp_min(1e-8)
-    threshold = max(0.0, min(1.0, float(payload.tamper_threshold)))
-    tamper_mask = (tamper_map_norm > threshold).to(tamper_map_norm.dtype)
-
-    metrics = {
-        "mse_attacked_vs_protected": compute_mse(attacked_gray, protected_gray).item(),
-        "psnr_attacked_vs_protected": compute_psnr(attacked_gray, protected_gray).item(),
-        "ssim_attacked_vs_protected": compute_ssim(attacked_gray, protected_gray).item(),
-    }
-
-    attacked_bytes = grayscale_minus1_1_to_png_bytes(attacked_gray)
-    tamper_map_bytes = grayscale_unit_interval_to_png_bytes(tamper_map_norm)
-    tamper_mask_bytes = grayscale_unit_interval_to_png_bytes(tamper_mask)
-
-    attacked_b64 = base64.b64encode(attacked_bytes).decode("utf-8")
-    tamper_map_b64 = base64.b64encode(tamper_map_bytes).decode("utf-8")
-    tamper_mask_b64 = base64.b64encode(tamper_mask_bytes).decode("utf-8")
-
-    attack_record = {
-        "id": uuid.uuid4().hex,
-        "patient_id": patient["id"],
-        "attack_type": payload.attack_type,
-        "tamper_threshold": threshold,
-        "metrics": metrics,
-        "created_at": _now_iso(),
-    }
-    store.add_attack(attack_record)
-    store.update_patient(
-        patient["id"],
-        {
-            "status": "Attacked",
-            "last_attack_at": attack_record["created_at"],
-            "last_attack_type": payload.attack_type,
-        },
-    )
-
-    return {
-        "success": True,
-        "attack_type": payload.attack_type,
-        "protected_image_url": patient["protected_url"],
-        "attacked_image": f"data:image/png;base64,{attacked_b64}",
-        "tamper_map": f"data:image/png;base64,{tamper_map_b64}",
-        "tamper_mask": f"data:image/png;base64,{tamper_mask_b64}",
-        "tamper_threshold": threshold,
-        "metrics": metrics,
-    }
+    except Exception as exc:
+        detail = _memory_error_detail(exc)
+        if detail:
+            raise HTTPException(status_code=503, detail=detail)
+        logger.error("Attack error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Attack failed: {exc}")
 
 
 @app.post(f"{API_PREFIX}/protect-image")
@@ -336,6 +352,9 @@ async def protect_image(image: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as exc:
+        detail = _memory_error_detail(exc)
+        if detail:
+            raise HTTPException(status_code=503, detail=detail)
         logger.error("Error processing image: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing image: {exc}")
 
@@ -361,6 +380,9 @@ async def protect_image_json(image: UploadFile = File(...)):
         }
 
     except Exception as exc:
+        detail = _memory_error_detail(exc)
+        if detail:
+            return JSONResponse(status_code=503, content={"success": False, "error": detail})
         logger.error("Error: %s", exc)
         return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
 
@@ -432,8 +454,29 @@ async def protect_image_attack(
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"success": False, "error": str(exc)})
     except Exception as exc:
+        detail = _memory_error_detail(exc)
+        if detail:
+            return JSONResponse(status_code=503, content={"success": False, "error": detail})
         logger.error("Attack error: %s", exc, exc_info=True)
         return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
+
+
+@app.post("/protect")
+async def protect_alias(image: UploadFile = File(...)):
+    return await protect_image(image)
+
+
+@app.post("/attack")
+async def attack_alias(
+    image: UploadFile = File(...),
+    attack_type: str = Form("combined"),
+    tamper_threshold: float = Form(0.25),
+):
+    return await protect_image_attack(
+        image=image,
+        attack_type=attack_type,
+        tamper_threshold=tamper_threshold,
+    )
 
 
 if __name__ == "__main__":
@@ -442,7 +485,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
-        port=5000,
-        reload=True,
+        port=int(os.getenv("PORT", "10000")),
+        reload=False,
         log_level="info",
     )
