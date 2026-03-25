@@ -7,9 +7,9 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.append(str(BACKEND_DIR))
 
 from config import (
     ALLOW_PLACEHOLDER_MODEL,
