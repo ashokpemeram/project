@@ -6,6 +6,7 @@ Replace MitsGanGenerator with your real architecture and keep the class name
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ResidualBlock(nn.Module):
@@ -96,6 +97,8 @@ class MitsGanGenerator(nn.Module):
         z = z.to(device=img.device, dtype=img.dtype)
 
         p = self.noisenet(z)
+        if p.shape[-2:] != img.shape[-2:]:
+            p = F.interpolate(p, size=img.shape[-2:], mode="bilinear", align_corners=False)
         x = torch.cat([img, p], 1)
         x = self.initial(x)
         x = self.res(x)

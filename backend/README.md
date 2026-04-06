@@ -20,7 +20,7 @@ pip install -r requirements.txt
 3. Configure environment:
 
 - Copy `.env.example` to `.env`
-- Set `MODEL_PATH` to your weights file
+- Place your weights at `model/weights/model.pth` (fixed path)
 - Set `MODEL_URL` to a public Google Drive link or file ID for first-time downloads
 - Set `MODEL_CLASS_PATH` to `model.generator:MitsGanGenerator` or your class
 
