@@ -152,6 +152,13 @@ class MongoStore:
         self._object_id = ObjectId
         self.client = MongoClient(uri)
         self.db = self.client[db_name]
+
+        # Verify connection and log status
+        try:
+            self.client.admin.command("ping")
+            print(f"[MongoDB] ✅ Connected successfully to: {uri} (database: '{db_name}')")
+        except Exception as conn_err:
+            print(f"[MongoDB] ❌ Connection FAILED to: {uri} (database: '{db_name}') — {conn_err}")
         self.users = self.db["users"]
         self.sessions = self.db["sessions"]
         self.patients = self.db["patients"]
