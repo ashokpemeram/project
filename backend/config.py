@@ -62,6 +62,9 @@ CORS_ORIGINS = [
 
 # Simple auth configuration
 PASSWORD_SALT = os.getenv("PASSWORD_SALT", "dev-salt")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+ADMIN_NAME = os.getenv("ADMIN_NAME", "Administrator")
 
 # Data backend
 DATA_BACKEND = os.getenv("DATA_BACKEND", "json")

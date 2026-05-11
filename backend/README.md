@@ -40,13 +40,31 @@ The API runs on `http://localhost:10000` by default (or the value of `PORT`).
 
 ## Key Endpoints
 
-- POST `/api/auth/signup`
 - POST `/api/auth/login`
 - POST `/api/upload`
 - GET `/api/patients`
 - GET `/api/patients/{id}`
 - GET `/protected/{filename}`
 - POST `/api/attack`
+
+## Admin
+
+Public doctor signup is disabled. Create doctors via an admin account.
+
+1. Set these in `backend/.env`:
+
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
+- `ADMIN_NAME` (optional)
+
+2. Start the backend once to bootstrap the admin account (it is created if missing).
+
+Admin endpoints (require `Authorization: Bearer <token>` from an admin login):
+
+- GET `/api/admin/doctors`
+- POST `/api/admin/doctors`
+- DELETE `/api/admin/doctors/{doctor_id}`
+- DELETE `/api/admin/patients/{patient_id}`
 
 ## Notes
 

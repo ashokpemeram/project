@@ -1,18 +1,24 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login as loginRequest } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { validateEmail } from "../utils/validation";
 import "./Auth.css";
 
-export default function Login() {
+export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { token, user, login } = useAuth();
+
+  useEffect(() => {
+    if (token && user?.role === "admin") {
+      navigate("/admin", { replace: true });
+    }
+  }, [token, user, navigate]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -30,12 +36,12 @@ export default function Login() {
     setLoading(true);
     try {
       const data = await loginRequest({ email: email.trim(), password });
-      login({ token: data.token, user: data.user });
-      if (data.user?.role === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/dashboard");
+      if (data.user?.role !== "admin") {
+        setError("This account is not an admin.");
+        return;
       }
+      login({ token: data.token, user: data.user });
+      navigate("/admin");
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -47,8 +53,8 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-card card fade-up">
         <div className="auth-header">
-          <h1>Doctor Sign In</h1>
-          <p>Access the secure imaging console.</p>
+          <h1>Admin Sign In</h1>
+          <p>Manage doctors and patient records.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>
@@ -91,10 +97,11 @@ export default function Login() {
           </button>
         </form>
         <div className="auth-footer">
-          <span>Need an account? Ask an admin.</span>
-          <Link to="/admin/login">Admin login</Link>
+          <span>Doctor access?</span>
+          <Link to="/login">Doctor login</Link>
         </div>
       </div>
     </div>
   );
 }
+

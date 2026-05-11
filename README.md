@@ -37,12 +37,13 @@ npm start
 
 ## Demo Flow
 
-1. Doctor signs up and logs in.
-2. Upload a patient scan with metadata.
-3. System generates the protected image and stores it.
-4. Review patient record.
-5. Open tamper simulation.
-6. Run attacks and review the metrics and masks.
+1. Admin signs in and creates a doctor account.
+2. Doctor logs in with the provided credentials.
+3. Upload a patient scan with metadata.
+4. System generates the protected image and stores it.
+5. Review patient record.
+6. Open tamper simulation.
+7. Run attacks and review the metrics and masks.
 
 ## Database
 

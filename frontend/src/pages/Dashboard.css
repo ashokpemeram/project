@@ -63,6 +63,11 @@
   padding: 8px 0;
 }
 
+.field-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .form-error {
   color: var(--danger);
   background: rgba(198, 82, 60, 0.12);

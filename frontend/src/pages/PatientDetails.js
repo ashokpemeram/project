@@ -6,11 +6,12 @@ import "./PatientDetails.css";
 
 export default function PatientDetails() {
   const { patientId } = useParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [patient, setPatient] = useState(null);
   const [attacks, setAttacks] = useState([]);
   const [error, setError] = useState("");
+  const basePath = user?.role === "admin" ? "/admin" : "";
 
   useEffect(() => {
     const loadPatient = async () => {
@@ -56,7 +57,10 @@ export default function PatientDetails() {
             <a className="button primary" href={resolveImageUrl(patient.protected_url)} download>
               Download Protected
             </a>
-            <button className="button ghost" onClick={() => navigate(`/analysis?patient=${patient.id}`)}>
+            <button
+              className="button ghost"
+              onClick={() => navigate(`${basePath}/analysis?patient=${patient.id}`)}
+            >
               View Analysis
             </button>
           </div>

@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import re
 import sys
 import uuid
 from contextlib import asynccontextmanager
@@ -29,7 +30,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from attacker.attack_metrics import compute_mse, compute_psnr, compute_ssim
 from attacker.attacker import Attacker, build_default_training_attacker
-from config import API_PREFIX, CORS_ORIGINS, PROTECTED_DIR, STORE_PATH
+from config import ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD, API_PREFIX, CORS_ORIGINS, PROTECTED_DIR, STORE_PATH
 from model_service import model_service
 from repository import get_store
 from security import hash_password, new_token, verify_password
@@ -48,6 +49,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 store = get_store()
+
+EMAIL_RE = re.compile(
+    r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+"
+    r"@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+    r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+)
+ALPHA_NAME_RE = re.compile(r"^[A-Za-z ]+$")
+PATIENT_ID_RE = re.compile(r"^PAT\d{3,}$", re.IGNORECASE)
 
 
 def _build_attacker(attack_type: str, device: str) -> torch.nn.Module:
@@ -88,6 +97,57 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     return user
 
 
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def _validate_email(email: str) -> str:
+    value = (email or "").strip().lower()
+    if not value:
+        raise ValueError("Email is required.")
+    if not EMAIL_RE.match(value):
+        raise ValueError("Invalid email address.")
+    return value
+
+
+def _validate_alpha_name(name: str, label: str = "Name") -> str:
+    value = (name or "").strip()
+    if not value:
+        raise ValueError(f"{label} is required.")
+    if not ALPHA_NAME_RE.match(value):
+        raise ValueError(f"{label} must contain only letters and spaces.")
+    if len(value.replace(" ", "")) < 3:
+        raise ValueError(f"{label} must be at least 3 letters.")
+    return value
+
+
+def _validate_patient_id(patient_id: str) -> str:
+    value = (patient_id or "").strip()
+    if not value:
+        raise ValueError("Patient ID is required.")
+    if not PATIENT_ID_RE.match(value):
+        raise ValueError("Patient ID must look like PAT001.")
+    return value.upper()
+
+
+def _ensure_admin_account() -> None:
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        logger.warning("ADMIN_EMAIL/ADMIN_PASSWORD not set; admin login disabled")
+        return
+
+    existing = store.get_user_by_email(ADMIN_EMAIL)
+    if existing:
+        if existing.get("role") != "admin":
+            logger.warning("User %s exists but is not an admin (role=%s)", ADMIN_EMAIL, existing.get("role"))
+        return
+
+    password_hash = hash_password(ADMIN_PASSWORD)
+    store.create_user(ADMIN_NAME, ADMIN_EMAIL, password_hash, role="admin")
+    logger.info("Bootstrapped admin account for %s", ADMIN_EMAIL)
+
+
 class SignupRequest(BaseModel):
     name: str
     email: str
@@ -108,6 +168,7 @@ class AttackRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Secure Hospital Imaging API")
+    _ensure_admin_account()
     if model_service.is_loaded():
         logger.info("Model loaded successfully on %s", model_service.get_device())
     else:
@@ -155,14 +216,54 @@ async def health_check():
 
 @app.post(f"{API_PREFIX}/auth/signup")
 async def signup(payload: SignupRequest):
+    raise HTTPException(status_code=403, detail="Signup is disabled. Ask an admin to create your account.")
+
+
+class AdminCreateDoctorRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+@app.get(f"{API_PREFIX}/admin/doctors")
+async def list_doctors(admin: dict = Depends(require_admin)):
+    users = store.list_users()
+    doctors = [user for user in users if user.get("role", "doctor") == "doctor"]
+    return {"success": True, "doctors": [_sanitize_user(user) for user in doctors]}
+
+
+@app.post(f"{API_PREFIX}/admin/doctors")
+async def create_doctor(payload: AdminCreateDoctorRequest, admin: dict = Depends(require_admin)):
     try:
+        name = _validate_alpha_name(payload.name, "Doctor name")
+        email = _validate_email(payload.email)
+        if not (payload.password or "").strip():
+            raise ValueError("Password is required.")
+
         password_hash = hash_password(payload.password)
-        user = store.create_user(payload.name, payload.email, password_hash)
-        token = new_token()
-        store.create_session(user["id"], token)
-        return {"success": True, "token": token, "user": _sanitize_user(user)}
+        user = store.create_user(name, email, password_hash, role="doctor")
+        return {"success": True, "doctor": _sanitize_user(user)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete(f"{API_PREFIX}/admin/doctors/{{doctor_id}}")
+async def delete_doctor(doctor_id: str, admin: dict = Depends(require_admin)):
+    user = store.get_user_by_id(doctor_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    if user.get("role") != "doctor":
+        raise HTTPException(status_code=400, detail="Only doctor accounts can be deleted")
+    deleted = store.delete_user(doctor_id)
+    return {"success": True, "deleted": bool(deleted)}
+
+
+@app.delete(f"{API_PREFIX}/admin/patients/{{patient_id}}")
+async def delete_patient(patient_id: str, admin: dict = Depends(require_admin)):
+    deleted = store.delete_patient(patient_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return {"success": True, "deleted": True}
 
 
 @app.post(f"{API_PREFIX}/auth/login")
@@ -185,6 +286,12 @@ async def upload_patient_scan(
     user: dict = Depends(get_current_user),
 ):
     try:
+        try:
+            clean_patient_name = _validate_alpha_name(patient_name, "Patient name")
+            clean_patient_id = _validate_patient_id(patient_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
         file_content = await image.read()
         is_valid, error_msg = validate_image(file_content, image.filename)
         if not is_valid:
@@ -211,8 +318,8 @@ async def upload_patient_scan(
 
         patient_record = {
             "id": uuid.uuid4().hex,
-            "patient_name": patient_name.strip(),
-            "patient_id": patient_id.strip(),
+            "patient_name": clean_patient_name,
+            "patient_id": clean_patient_id,
             "scan_type": scan_type.strip(),
             "diagnosis_notes": diagnosis_notes.strip(),
             "protected_filename": filename,

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { listPatients, resolveImageUrl, uploadPatient } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { suggestNextPatientId, formatPatientId, parsePatientIdNumber } from "../utils/patientId";
+import { validateAlphaName, validatePatientId } from "../utils/validation";
 import "./Dashboard.css";
 
 const initialForm = {
@@ -15,24 +17,49 @@ export default function Dashboard() {
   const [form, setForm] = useState(initialForm);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
   const [latest, setLatest] = useState(null);
   const [patientCount, setPatientCount] = useState(0);
+  const [patientIdMax, setPatientIdMax] = useState(0);
+  const [suggestedPatientId, setSuggestedPatientId] = useState("PAT001");
 
   useEffect(() => {
     const loadStats = async () => {
       try {
         const data = await listPatients(token);
-        setPatientCount(data.patients?.length || 0);
+        const patients = data.patients || [];
+        setPatientCount(patients.length || 0);
+
+        let max = 0;
+        for (const patient of patients) {
+          const value = parsePatientIdNumber(patient?.patient_id);
+          if (value && value > max) max = value;
+        }
+        setPatientIdMax(max);
+
+        const suggested = suggestNextPatientId(patients);
+        setSuggestedPatientId(suggested);
+        setForm((prev) => {
+          if (String(prev.patientId ?? "").trim()) return prev;
+          return { ...prev, patientId: suggested };
+        });
       } catch {
         setPatientCount(0);
+        setPatientIdMax(0);
+        setSuggestedPatientId("PAT001");
       }
     };
     loadStats();
   }, [token]);
 
   const updateField = (field) => (event) => {
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+    const value = event.target.value;
+    setForm((prev) => ({ ...prev, [field]: value }));
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => ({ ...prev, [field]: "" }));
+    }
+    if (error) setError("");
   };
 
   const handleFileChange = (event) => {
@@ -43,6 +70,16 @@ export default function Dashboard() {
     event.preventDefault();
     setError("");
 
+    const nextErrors = {};
+    const nameError = validateAlphaName(form.patientName, "Patient name");
+    if (nameError) nextErrors.patientName = nameError;
+    const patientIdError = validatePatientId(form.patientId);
+    if (patientIdError) nextErrors.patientId = patientIdError;
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length) {
+      return;
+    }
+
     if (!file) {
       setError("Please select a scan image.");
       return;
@@ -52,14 +89,22 @@ export default function Dashboard() {
     try {
       const formData = new FormData();
       formData.append("image", file);
-      formData.append("patient_name", form.patientName);
-      formData.append("patient_id", form.patientId);
+      formData.append("patient_name", form.patientName.trim());
+      formData.append("patient_id", form.patientId.trim().toUpperCase());
       formData.append("scan_type", form.scanType);
       formData.append("diagnosis_notes", form.diagnosisNotes);
 
       const data = await uploadPatient(formData, token);
       setLatest(data.patient);
-      setForm(initialForm);
+      setFieldErrors({});
+
+      const used = parsePatientIdNumber(form.patientId);
+      const nextMax = used ? Math.max(patientIdMax, used) : patientIdMax;
+      setPatientIdMax(nextMax);
+      const nextSuggested = formatPatientId(nextMax + 1);
+      setSuggestedPatientId(nextSuggested);
+
+      setForm({ ...initialForm, patientId: nextSuggested });
       setFile(null);
       setPatientCount((count) => count + 1);
     } catch (err) {
@@ -99,11 +144,26 @@ export default function Dashboard() {
             <div className="form-grid">
               <label>
                 Patient name
-                <input value={form.patientName} onChange={updateField("patientName")} required />
+                <input
+                  value={form.patientName}
+                  onChange={updateField("patientName")}
+                  className={fieldErrors.patientName ? "input-error" : ""}
+                  required
+                />
+                {fieldErrors.patientName && (
+                  <div className="field-error">{fieldErrors.patientName}</div>
+                )}
               </label>
               <label>
                 Patient ID
-                <input value={form.patientId} onChange={updateField("patientId")} required />
+                <input
+                  value={form.patientId}
+                  onChange={updateField("patientId")}
+                  className={fieldErrors.patientId ? "input-error" : ""}
+                  required
+                />
+                <div className="field-hint">Suggested: {suggestedPatientId}</div>
+                {fieldErrors.patientId && <div className="field-error">{fieldErrors.patientId}</div>}
               </label>
               <label>
                 Scan type

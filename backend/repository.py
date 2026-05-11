@@ -66,6 +66,11 @@ class JsonStore:
             self._write_locked(data)
             return user
 
+    def list_users(self) -> list[dict[str, Any]]:
+        with self.lock:
+            data = self._read_locked()
+            return list(data["users"])
+
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:
         with self.lock:
             data = self._read_locked()
@@ -76,6 +81,17 @@ class JsonStore:
         with self.lock:
             data = self._read_locked()
             return next((user for user in data["users"] if user["id"] == user_id), None)
+
+    def delete_user(self, user_id: str) -> bool:
+        with self.lock:
+            data = self._read_locked()
+            before = len(data["users"])
+            data["users"] = [user for user in data["users"] if user.get("id") != user_id]
+            deleted = len(data["users"]) != before
+            if deleted:
+                data["sessions"] = [session for session in data["sessions"] if session.get("user_id") != user_id]
+                self._write_locked(data)
+            return deleted
 
     def create_session(self, user_id: str, token: str) -> dict[str, Any]:
         with self.lock:
@@ -124,6 +140,17 @@ class JsonStore:
                     self._write_locked(data)
                     return patient
             return None
+
+    def delete_patient(self, patient_id: str) -> bool:
+        with self.lock:
+            data = self._read_locked()
+            before = len(data["patients"])
+            data["patients"] = [patient for patient in data["patients"] if patient.get("id") != patient_id]
+            deleted = len(data["patients"]) != before
+            if deleted:
+                data["attacks"] = [attack for attack in data["attacks"] if attack.get("patient_id") != patient_id]
+                self._write_locked(data)
+            return deleted
 
     def add_attack(self, attack: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
@@ -199,12 +226,22 @@ class MongoStore:
             raise ValueError("Email already registered.")
         return self._clean(user)
 
+    def list_users(self) -> list[dict[str, Any]]:
+        return [self._clean(doc) for doc in self.users.find({}).sort("created_at", -1)]
+
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:
         normalized_email = email.strip().lower()
         return self._clean(self.users.find_one({"email": normalized_email}))
 
     def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
         return self._clean(self.users.find_one({"id": user_id}))
+
+    def delete_user(self, user_id: str) -> bool:
+        result = self.users.delete_one({"id": user_id})
+        if result.deleted_count:
+            self.sessions.delete_many({"user_id": user_id})
+            return True
+        return False
 
     def create_session(self, user_id: str, token: str) -> dict[str, Any]:
         session = {"token": token, "user_id": user_id, "created_at": _now_iso()}
@@ -234,6 +271,14 @@ class MongoStore:
             return_document=self._return_document.AFTER,
         )
         return self._clean(updated)
+
+    def delete_patient(self, patient_id: str) -> bool:
+        patient = self.patients.find_one({"id": patient_id})
+        if not patient:
+            return False
+        self.patients.delete_one({"id": patient_id})
+        self.attacks.delete_many({"patient_id": patient_id})
+        return True
 
     def add_attack(self, attack: dict[str, Any]) -> dict[str, Any]:
         self.attacks.insert_one(attack)

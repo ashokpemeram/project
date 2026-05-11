@@ -13,7 +13,8 @@ The app runs at `http://localhost:3000` and expects the backend at `http://local
 
 ## Pages
 
-- Login / Signup
+- Doctor Login
+- Admin Login + Doctor management
 - Dashboard (upload + demo flow)
 - Patient Records
 - Tamper Simulation & Analysis

@@ -70,6 +70,15 @@ button {
   border-color: rgba(16, 32, 34, 0.4);
 }
 
+.button.ghost.danger {
+  border-color: rgba(198, 82, 60, 0.35);
+  color: var(--danger);
+}
+
+.button.ghost.danger:hover {
+  border-color: rgba(198, 82, 60, 0.65);
+}
+
 .card {
   background: var(--panel);
   border-radius: 18px;
@@ -132,4 +141,15 @@ button {
   background: rgba(198, 82, 60, 0.12);
   padding: 10px 12px;
   border-radius: 12px;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.input-error {
+  border-color: rgba(198, 82, 60, 0.65) !important;
+  box-shadow: 0 0 0 3px rgba(198, 82, 60, 0.12);
 }

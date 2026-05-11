@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listPatients, resolveImageUrl } from "../services/api";
+import { adminDeletePatient, listPatients, resolveImageUrl } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import "./Patients.css";
 
 export default function Patients() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [patients, setPatients] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const basePath = user?.role === "admin" ? "/admin" : "";
+  const [deletingId, setDeletingId] = useState("");
 
   useEffect(() => {
     const loadPatients = async () => {
@@ -25,6 +27,24 @@ export default function Patients() {
     };
     loadPatients();
   }, [token]);
+
+  const handleDelete = async (patient) => {
+    if (user?.role !== "admin") return;
+    if (!patient?.id) return;
+    const label = patient.patient_id ? `${patient.patient_name} (${patient.patient_id})` : patient.patient_name;
+    if (!window.confirm(`Delete patient record ${label}?`)) return;
+
+    setDeletingId(patient.id);
+    setError("");
+    try {
+      await adminDeletePatient(patient.id, token);
+      setPatients((prev) => (Array.isArray(prev) ? prev.filter((p) => p.id !== patient.id) : []));
+    } catch (err) {
+      setError(err.message || "Failed to delete patient");
+    } finally {
+      setDeletingId("");
+    }
+  };
 
   return (
     <div className="patients-page grid">
@@ -63,12 +83,21 @@ export default function Patients() {
               </div>
             </div>
             <div className="patient-actions">
-              <button className="button ghost" onClick={() => navigate(`/patients/${patient.id}`)}>
+              <button className="button ghost" onClick={() => navigate(`${basePath}/patients/${patient.id}`)}>
                 View Details
               </button>
-              <button className="button ghost" onClick={() => navigate(`/analysis?patient=${patient.id}`)}>
+              <button className="button ghost" onClick={() => navigate(`${basePath}/analysis?patient=${patient.id}`)}>
                 Simulate Attack
               </button>
+              {user?.role === "admin" && (
+                <button
+                  className="button ghost danger"
+                  onClick={() => handleDelete(patient)}
+                  disabled={deletingId === patient.id}
+                >
+                  {deletingId === patient.id ? "Deleting..." : "Delete"}
+                </button>
+              )}
               <a className="button primary" href={resolveImageUrl(patient.protected_url)} download>
                 Download Protected
               </a>
